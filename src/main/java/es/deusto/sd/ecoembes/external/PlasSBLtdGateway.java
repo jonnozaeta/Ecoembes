@@ -24,13 +24,15 @@ public class PlasSBLtdGateway {
     }
 
     public double getUsedCapacity(String plantId, LocalDate date) {
-        return plantAllocatedWeight.getOrDefault(plantId, 10000.0);
+        return plantAllocatedWeight.getOrDefault(plantId, 0.0);
     }
 
-    public boolean reserveCapacity(String plantId, double weightKg, ContainerType wasteType, LocalDate date) {
+    // synchronized: evita que dos reservas simultáneas superen juntas el límite
+    public synchronized boolean reserveCapacity(String plantId, double weightKg, double maxCapacityKg,
+                                                ContainerType wasteType, LocalDate date) {
         double current = plantAllocatedWeight.getOrDefault(plantId, 0.0);
-        // Simula la comprobación del límite de capacidad (por ejemplo, máximo 50000 kg)
-        if (current + weightKg > 50000.0) {
+        // Comprueba el límite de capacidad diaria de la planta
+        if (current + weightKg > maxCapacityKg) {
             return false;
         }
         plantAllocatedWeight.put(plantId, current + weightKg);

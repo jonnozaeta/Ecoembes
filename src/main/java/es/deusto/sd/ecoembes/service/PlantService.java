@@ -90,7 +90,8 @@ public class PlantService {
         LocalDate allocationDate = dto.getAllocationDate() != null ? dto.getAllocationDate() : LocalDate.now();
 
         // Comprueba y reserva capacidad con PlasSB Ltd.
-        boolean reserved = plasSBGateway.reserveCapacity(plantId, dto.getWasteAmount(), dto.getWasteType(), allocationDate);
+        boolean reserved = plasSBGateway.reserveCapacity(plantId, dto.getWasteAmount(),
+                plant.getMaxDailyCapacityKg(), dto.getWasteType(), allocationDate);
         if (!reserved) {
             return new AllocationResponse(AllocationStatus.CAPACITY_EXCEEDED, null);
         }
