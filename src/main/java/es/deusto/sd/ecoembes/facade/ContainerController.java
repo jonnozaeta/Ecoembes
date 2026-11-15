@@ -117,14 +117,18 @@ public class ContainerController {
     public ResponseEntity<List<ContainerZoneStatusDTO>> getZoneStatus(
             @Parameter(description = "Token de autenticación", required = true)
             @RequestParam("token") String token,
-            @Parameter(description = "Código postal (opcional)")
-            @RequestParam(value = "postalCode", required = false) String postalCode,
+            @Parameter(description = "Código postal", required = true)
+            @RequestParam("postalCode") String postalCode,
             @Parameter(description = "Fecha de consulta (opcional)")
             @RequestParam(value = "date", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
 
         if (!authService.validateToken(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        if (postalCode == null || postalCode.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
 
         List<ContainerZoneStatusDTO> list = containerService.getZoneStatus(postalCode, date);

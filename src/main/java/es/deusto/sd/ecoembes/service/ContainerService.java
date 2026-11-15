@@ -4,7 +4,6 @@ import es.deusto.sd.ecoembes.entity.Container;
 import es.deusto.sd.ecoembes.entity.ContainerType;
 import es.deusto.sd.ecoembes.entity.SensorMeasurement;
 import es.deusto.sd.ecoembes.dto.*;
-import es.deusto.sd.ecoembes.external.ContSocketLtdGateway;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -16,14 +15,11 @@ import java.util.stream.Collectors;
 @Service
 public class ContainerService {
 
-    private final ContSocketLtdGateway contSocketGateway;
-
     // Estructuras de datos en memoria
     private final Map<String, Container> containers = new ConcurrentHashMap<>();
     private final Map<String, List<SensorMeasurement>> measurements = new ConcurrentHashMap<>();
 
-    public ContainerService(ContSocketLtdGateway contSocketGateway) {
-        this.contSocketGateway = contSocketGateway;
+    public ContainerService() {
         seedInitialData();
     }
 
@@ -85,9 +81,6 @@ public class ContainerService {
         );
         measurements.computeIfAbsent(container.getId(), k -> Collections.synchronizedList(new ArrayList<>()))
                 .add(measurement);
-
-        // Notifica al servicio externo ContSocket Ltd.
-        contSocketGateway.forwardTelemetry(container.getId(), dto.getCurrentLevel(), timestamp);
 
         return Optional.of(new ContainerStatusDTO(container.getId(), dto.getCurrentLevel(), timestamp));
     }

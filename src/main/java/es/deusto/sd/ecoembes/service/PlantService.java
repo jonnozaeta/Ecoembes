@@ -5,7 +5,6 @@ import es.deusto.sd.ecoembes.entity.Plant;
 import es.deusto.sd.ecoembes.dto.AllocationDTO;
 import es.deusto.sd.ecoembes.dto.AllocationResultDTO;
 import es.deusto.sd.ecoembes.dto.PlantCapacityDTO;
-import es.deusto.sd.ecoembes.external.PlasSBLtdGateway;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -17,14 +16,15 @@ import java.util.stream.Collectors;
 @Service
 public class PlantService {
 
-    private final PlasSBLtdGateway plasSBGateway;
     private final ContainerService containerService;
 
     private final Map<String, Plant> plants = new ConcurrentHashMap<>();
     private final Map<String, Allocation> allocations = new ConcurrentHashMap<>();
 
-    public PlantService(PlasSBLtdGateway plasSBGateway, ContainerService containerService) {
-        this.plasSBGateway = plasSBGateway;
+    // Capacidad diaria ya utilizada por planta (plantId -> kg), simulada en memoria
+    private final Map<String, Double> usedCapacityKg = new ConcurrentHashMap<>();
+
+    public PlantService(ContainerService containerService) {
         this.containerService = containerService;
         seedPlants();
     }
@@ -37,14 +37,27 @@ public class PlantService {
         plants.put(p1.getId(), p1);
         plants.put(p2.getId(), p2);
         plants.put(p3.getId(), p3);
+
+        // Reservas iniciales simuladas de capacidad
+        usedCapacityKg.put("PLANT-01", 32000.0);
+        usedCapacityKg.put("PLANT-02", 15000.0);
+    }
+
+    // synchronized: evita que dos reservas simultáneas superen juntas el límite
+    private synchronized boolean reserveCapacity(String plantId, double weightKg, double maxCapacityKg) {
+        double current = usedCapacityKg.getOrDefault(plantId, 0.0);
+        if (current + weightKg > maxCapacityKg) {
+            return false;
+        }
+        usedCapacityKg.put(plantId, current + weightKg);
+        return true;
     }
 
     public List<PlantCapacityDTO> getPlantsCapacity(LocalDate date) {
         LocalDate queryDate = date != null ? date : LocalDate.now();
 
         return plants.values().stream().map(p -> {
-            // Llamada externa a PlasSB Ltd. para obtener los datos actuales de capacidad
-            double used = plasSBGateway.getUsedCapacity(p.getId(), queryDate);
+            double used = usedCapacityKg.getOrDefault(p.getId(), 0.0);
             double available = Math.max(0.0, p.getMaxDailyCapacityKg() - used);
             return new PlantCapacityDTO(p.getId(), p.getName(), p.getMaxDailyCapacityKg(), used, available, queryDate);
         }).collect(Collectors.toList());
@@ -89,9 +102,8 @@ public class PlantService {
 
         LocalDate allocationDate = dto.getAllocationDate() != null ? dto.getAllocationDate() : LocalDate.now();
 
-        // Comprueba y reserva capacidad con PlasSB Ltd.
-        boolean reserved = plasSBGateway.reserveCapacity(plantId, dto.getWasteAmount(),
-                plant.getMaxDailyCapacityKg(), dto.getWasteType(), allocationDate);
+        // Comprueba y reserva capacidad de la planta
+        boolean reserved = reserveCapacity(plantId, dto.getWasteAmount(), plant.getMaxDailyCapacityKg());
         if (!reserved) {
             return new AllocationResponse(AllocationStatus.CAPACITY_EXCEEDED, null);
         }
