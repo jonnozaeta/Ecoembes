@@ -1,11 +1,23 @@
 package es.deusto.sd.ecoembes.entity;
 
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
+@Entity
+@Table(name = "containers")
 public class Container {
+
+    @Id
     private String id;
     private String postalCode;
+
+    @Enumerated(EnumType.STRING)
     private ContainerType type;
+
     private double capacity; 
     private double currentLevel; 
     private LocalDateTime lastUpdated;

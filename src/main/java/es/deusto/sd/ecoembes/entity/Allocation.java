@@ -1,12 +1,21 @@
 package es.deusto.sd.ecoembes.entity;
 
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+@Entity
+@Table(
+    name = "allocations"
+)
 public class Allocation {
+
+    @Id
     private String id;
     private String plantId;
     private String containerId;
     private double wasteAmountKg;
+
+    @Enumerated(EnumType.STRING)
     private ContainerType wasteType;
     private LocalDateTime allocationDate;
     private String status; // "CONFIRMED", "PENDING", "REJECTED"

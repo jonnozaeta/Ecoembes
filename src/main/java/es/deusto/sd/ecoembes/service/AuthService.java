@@ -3,34 +3,39 @@ package es.deusto.sd.ecoembes.service;
 import es.deusto.sd.ecoembes.entity.User;
 import es.deusto.sd.ecoembes.dto.AuthTokenDTO;
 import es.deusto.sd.ecoembes.dto.CredentialsDTO;
+import es.deusto.sd.ecoembes.repository.UserRepository;
 import es.deusto.sd.ecoembes.state.SessionStateManager;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class AuthService {
 
+    private final UserRepository userRepository;
     private final SessionStateManager sessionStateManager;
-    // Usuarios registrados simulados en memoria
-    private final Map<String, User> registeredUsers = new ConcurrentHashMap<>();
 
-    public AuthService(SessionStateManager sessionStateManager) {
+    public AuthService(UserRepository userRepository, SessionStateManager sessionStateManager) {
+        this.userRepository = userRepository;
         this.sessionStateManager = sessionStateManager;
-        // Usuarios de demostración
-        registeredUsers.put("admin@ecoembes.es", new User("admin@ecoembes.es", "admin123", "ADMIN"));
-        registeredUsers.put("operario@ecoembes.es", new User("operario@ecoembes.es", "operario123", "OPERATOR"));
+    }
+
+    @PostConstruct
+    public void seedInitialUsers() {
+        if (userRepository.count() == 0) {
+            userRepository.save(new User("admin@ecoembes.es", "admin123", "ADMIN"));
+            userRepository.save(new User("operario@ecoembes.es", "operario123", "OPERATOR"));
+        }
     }
 
     public Optional<AuthTokenDTO> authenticate(CredentialsDTO credentials) {
         if (credentials == null || credentials.getEmail() == null || credentials.getPassword() == null) {
             return Optional.empty();
         }
-        User user = registeredUsers.get(credentials.getEmail());
-        if (user != null && user.getPassword().equals(credentials.getPassword())) {
-            SessionStateManager.SessionInfo session = sessionStateManager.createSession(user.getEmail());
+        Optional<User> userOpt = userRepository.findById(credentials.getEmail());
+        if (userOpt.isPresent() && userOpt.get().getPassword().equals(credentials.getPassword())) {
+            SessionStateManager.SessionInfo session = sessionStateManager.createSession(userOpt.get().getEmail());
             return Optional.of(new AuthTokenDTO(session.getToken(), session.getEmail(), session.getExpiresAt()));
         }
         return Optional.empty();

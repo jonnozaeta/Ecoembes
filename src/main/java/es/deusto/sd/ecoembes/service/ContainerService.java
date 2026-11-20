@@ -4,49 +4,50 @@ import es.deusto.sd.ecoembes.entity.Container;
 import es.deusto.sd.ecoembes.entity.ContainerType;
 import es.deusto.sd.ecoembes.entity.SensorMeasurement;
 import es.deusto.sd.ecoembes.dto.*;
+import es.deusto.sd.ecoembes.repository.ContainerRepository;
+import es.deusto.sd.ecoembes.repository.SensorMeasurementRepository;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
 public class ContainerService {
 
-    // Estructuras de datos en memoria
-    private final Map<String, Container> containers = new ConcurrentHashMap<>();
-    private final Map<String, List<SensorMeasurement>> measurements = new ConcurrentHashMap<>();
+    private final ContainerRepository containerRepository;
+    private final SensorMeasurementRepository measurementRepository;
 
-    public ContainerService() {
-        seedInitialData();
+    public ContainerService(ContainerRepository containerRepository,
+                            SensorMeasurementRepository measurementRepository) {
+        this.containerRepository = containerRepository;
+        this.measurementRepository = measurementRepository;
     }
 
-    private void seedInitialData() {
-        // Contenedor de prueba inicial
-        Container c1 = new Container("CONT-48001-01", "48001", ContainerType.YELLOW_PLASTIC, 3000.0, 45.0, LocalDateTime.now().minusHours(2));
-        Container c2 = new Container("CONT-48001-02", "48001", ContainerType.GREEN_GLASS, 2500.0, 70.0, LocalDateTime.now().minusHours(1));
-        Container c3 = new Container("CONT-48002-01", "48002", ContainerType.BLUE_PAPER, 3000.0, 30.0, LocalDateTime.now().minusHours(3));
+    @PostConstruct
+    public void seedInitialData() {
+        if (containerRepository.count() == 0) {
+            Container c1 = new Container("CONT-48001-01", "48001", ContainerType.YELLOW_PLASTIC, 3000.0, 45.0, LocalDateTime.now().minusHours(2));
+            Container c2 = new Container("CONT-48001-02", "48001", ContainerType.GREEN_GLASS, 2500.0, 70.0, LocalDateTime.now().minusHours(1));
+            Container c3 = new Container("CONT-48002-01", "48002", ContainerType.BLUE_PAPER, 3000.0, 30.0, LocalDateTime.now().minusHours(3));
 
-        containers.put(c1.getId(), c1);
-        containers.put(c2.getId(), c2);
-        containers.put(c3.getId(), c3);
+            containerRepository.saveAll(List.of(c1, c2, c3));
 
-        List<SensorMeasurement> hist1 = new ArrayList<>();
-        hist1.add(new SensorMeasurement(UUID.randomUUID().toString(), c1.getId(), 20.0, LocalDateTime.now().minusDays(2)));
-        hist1.add(new SensorMeasurement(UUID.randomUUID().toString(), c1.getId(), 35.0, LocalDateTime.now().minusDays(1)));
-        hist1.add(new SensorMeasurement(UUID.randomUUID().toString(), c1.getId(), 45.0, LocalDateTime.now().minusHours(2)));
-        measurements.put(c1.getId(), Collections.synchronizedList(hist1));
+            measurementRepository.save(new SensorMeasurement(UUID.randomUUID().toString(), c1.getId(), 20.0, LocalDateTime.now().minusDays(2)));
+            measurementRepository.save(new SensorMeasurement(UUID.randomUUID().toString(), c1.getId(), 35.0, LocalDateTime.now().minusDays(1)));
+            measurementRepository.save(new SensorMeasurement(UUID.randomUUID().toString(), c1.getId(), 45.0, LocalDateTime.now().minusHours(2)));
+        }
     }
 
     public boolean exists(String containerId) {
-        return containers.containsKey(containerId);
+        return containerRepository.existsById(containerId);
     }
 
     public Optional<ContainerDTO> createContainer(CreateContainerDTO dto) {
-        if (containers.containsKey(dto.getContainerId())) {
-            return Optional.empty(); // Conflict
+        if (containerRepository.existsById(dto.getContainerId())) {
+            return Optional.empty(); // 409 Conflict
         }
         Container container = new Container(
                 dto.getContainerId(),
@@ -56,41 +57,40 @@ public class ContainerService {
                 0.0,
                 LocalDateTime.now()
         );
-        containers.put(container.getId(), container);
-        measurements.put(container.getId(), Collections.synchronizedList(new ArrayList<>()));
-
-        return Optional.of(toDTO(container));
+        Container saved = containerRepository.save(container);
+        return Optional.of(toDTO(saved));
     }
 
     public Optional<ContainerStatusDTO> processSensorUpdate(SensorUpdateDTO dto) {
-        Container container = containers.get(dto.getContainerId());
-        if (container == null) {
-            return Optional.empty(); // 404
+        Optional<Container> containerOpt = containerRepository.findById(dto.getContainerId());
+        if (containerOpt.isEmpty()) {
+            return Optional.empty(); // 404 Not Found
         }
 
+        Container container = containerOpt.get();
         LocalDateTime timestamp = dto.getTimestamp() != null ? dto.getTimestamp() : LocalDateTime.now();
         container.setCurrentLevel(dto.getCurrentLevel());
         container.setLastUpdated(timestamp);
+        containerRepository.save(container);
 
-        // Registra el historial
+        // Record measurement history
         SensorMeasurement measurement = new SensorMeasurement(
                 UUID.randomUUID().toString(),
                 container.getId(),
                 dto.getCurrentLevel(),
                 timestamp
         );
-        measurements.computeIfAbsent(container.getId(), k -> Collections.synchronizedList(new ArrayList<>()))
-                .add(measurement);
+        measurementRepository.save(measurement);
 
         return Optional.of(new ContainerStatusDTO(container.getId(), dto.getCurrentLevel(), timestamp));
     }
 
     public Optional<List<ContainerStatusDTO>> getUsageHistory(String containerId, LocalDate startDate, LocalDate endDate) {
-        if (!containers.containsKey(containerId)) {
+        if (!containerRepository.existsById(containerId)) {
             return Optional.empty();
         }
 
-        List<SensorMeasurement> list = measurements.getOrDefault(containerId, Collections.emptyList());
+        List<SensorMeasurement> list = measurementRepository.findByContainerIdOrderByTimestampAsc(containerId);
         List<ContainerStatusDTO> result = list.stream()
                 .filter(m -> {
                     LocalDate date = m.getTimestamp().toLocalDate();
@@ -105,9 +105,11 @@ public class ContainerService {
     }
 
     public List<ContainerZoneStatusDTO> getZoneStatus(String postalCode, LocalDate date) {
-        // Agrupa los contenedores por código postal
-        Map<String, List<Container>> grouped = containers.values().stream()
-                .filter(c -> postalCode == null || postalCode.isBlank() || c.getPostalCode().equalsIgnoreCase(postalCode))
+        List<Container> allContainers = (postalCode != null && !postalCode.isBlank())
+                ? containerRepository.findByPostalCode(postalCode)
+                : containerRepository.findAll();
+
+        Map<String, List<Container>> grouped = allContainers.stream()
                 .collect(Collectors.groupingBy(Container::getPostalCode));
 
         List<ContainerZoneStatusDTO> zoneStatuses = new ArrayList<>();

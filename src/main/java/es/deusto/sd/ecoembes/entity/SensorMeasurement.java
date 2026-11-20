@@ -1,11 +1,18 @@
 package es.deusto.sd.ecoembes.entity;
 
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
+@Entity
+@Table(name = "sensor_measurements")
 public class SensorMeasurement {
+
+    @Id
     private String id;
     private String containerId;
-    private double fillLevel; // 0 - 100
+    private double fillLevel; 
     private LocalDateTime timestamp;
 
     public SensorMeasurement() {

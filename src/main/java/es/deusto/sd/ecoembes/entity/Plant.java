@@ -1,6 +1,14 @@
 package es.deusto.sd.ecoembes.entity;
 
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+@Entity
+@Table(name = "plants")
 public class Plant {
+
+    @Id
     private String id;
     private String name;
     private String location;
